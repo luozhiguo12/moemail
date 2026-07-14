@@ -249,13 +249,14 @@ const checkAndCreateKVNamespace = async () => {
 const checkAndCreatePages = async () => {
   console.log(`🔍 Checking if project "${PROJECT_NAME}" exists...`);
 
+  let pages;
   try {
-    await getPages();
+    pages = await getPages();
     console.log("✅ Project already exists, proceeding with update...");
   } catch (error) {
     if (error instanceof NotFoundError) {
       console.log("⚠️ Project not found, creating new project...");
-      const pages = await createPages();
+      pages = await createPages();
 
       if (!CUSTOM_DOMAIN && pages.subdomain) {
         console.log("⚠️ CUSTOM_DOMAIN is empty, using pages default domain...");
@@ -271,7 +272,7 @@ const checkAndCreatePages = async () => {
     }
   }
 
-  await ensurePagesDomain();
+  await ensurePagesDomain(pages?.subdomain);
 };
 
 /**

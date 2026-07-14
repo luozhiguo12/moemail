@@ -46,7 +46,7 @@ export const createPages = async () => {
   return project;
 };
 
-export const ensurePagesDomain = async () => {
+export const ensurePagesDomain = async (pagesSubdomain?: string) => {
   if (!CUSTOM_DOMAIN) return;
 
   const domainUrl = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/${PROJECT_NAME}/domains/${CUSTOM_DOMAIN}`;
@@ -102,12 +102,41 @@ export const ensurePagesDomain = async () => {
     throw new Error(`Failed to check DNS records: ${recordsResponse.status} ${await recordsResponse.text()}`);
   }
 
-  const records = await recordsResponse.json() as { result: Array<{ type: string; content: string }> };
-  const target = `${PROJECT_NAME}.pages.dev`;
+  const records = await recordsResponse.json() as { result: Array<{ id: string; type: string; content: string }> };
+  const target = pagesSubdomain?.replace(/^https?:\/\//, "").replace(/\/$/, "") || `${PROJECT_NAME}.pages.dev`;
   if (records.result.some(record => record.type === "CNAME" && record.content === target)) {
     console.log(`Pages DNS record for "${CUSTOM_DOMAIN}" already exists`);
     return;
   }
+
+  const legacyTarget = `${PROJECT_NAME}.pages.dev`;
+  const legacyRecord = records.result.find(record => record.type === "CNAME" && record.content === legacyTarget);
+  if (legacyRecord) {
+    const updateRecord = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${zone.id}/dns_records/${legacyRecord.id}`,
+      {
+        method: "PUT",
+        headers: {
+          ...headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "CNAME",
+          name: CUSTOM_DOMAIN,
+          content: target,
+          proxied: true,
+          ttl: 1,
+        }),
+      },
+    );
+    if (!updateRecord.ok) {
+      throw new Error(`Failed to update Pages DNS record: ${updateRecord.status} ${await updateRecord.text()}`);
+    }
+
+    console.log(`Pages DNS record updated for "${CUSTOM_DOMAIN}"`);
+    return;
+  }
+
   const conflictingRecords = records.result.filter(record => ["A", "AAAA", "CNAME"].includes(record.type));
   if (conflictingRecords.length > 0) {
     throw new Error(`Refusing to replace existing DNS records for "${CUSTOM_DOMAIN}"`);
