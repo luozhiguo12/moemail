@@ -108,7 +108,8 @@ export const ensurePagesDomain = async () => {
     console.log(`Pages DNS record for "${CUSTOM_DOMAIN}" already exists`);
     return;
   }
-  if (records.result.length > 0) {
+  const conflictingRecords = records.result.filter(record => ["A", "AAAA", "CNAME"].includes(record.type));
+  if (conflictingRecords.length > 0) {
     throw new Error(`Refusing to replace existing DNS records for "${CUSTOM_DOMAIN}"`);
   }
 
