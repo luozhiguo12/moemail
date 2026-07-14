@@ -46,6 +46,42 @@ export const createPages = async () => {
   return project;
 };
 
+export const ensurePagesDomain = async () => {
+  if (!CUSTOM_DOMAIN) return;
+
+  const domainUrl = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/${PROJECT_NAME}/domains/${CUSTOM_DOMAIN}`;
+  const headers = { Authorization: `Bearer ${CF_API_TOKEN}` };
+  const existingDomain = await fetch(domainUrl, { headers });
+
+  if (existingDomain.ok) {
+    console.log(`Pages domain "${CUSTOM_DOMAIN}" already exists`);
+    return;
+  }
+
+  if (existingDomain.status !== 404) {
+    throw new Error(`Failed to check Pages domain: ${existingDomain.status} ${await existingDomain.text()}`);
+  }
+
+  console.log(`Setting Pages domain "${CUSTOM_DOMAIN}"...`);
+  const createDomain = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/${PROJECT_NAME}/domains`,
+    {
+      method: "POST",
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: CUSTOM_DOMAIN }),
+    },
+  );
+
+  if (!createDomain.ok) {
+    throw new Error(`Failed to create Pages domain: ${createDomain.status} ${await createDomain.text()}`);
+  }
+
+  console.log("Pages domain set successfully");
+};
+
 export const getDatabase = async () => {
   if (DATABASE_ID) {
     return {

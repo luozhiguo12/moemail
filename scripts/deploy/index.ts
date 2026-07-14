@@ -7,6 +7,7 @@ import {
   createDatabase,
   createKVNamespace,
   createPages,
+  ensurePagesDomain,
   getDatabase,
   getKVNamespaceList,
   getPages,
@@ -269,6 +270,8 @@ const checkAndCreatePages = async () => {
       throw error;
     }
   }
+
+  await ensurePagesDomain();
 };
 
 /**
