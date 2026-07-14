@@ -55,31 +55,85 @@ export const ensurePagesDomain = async () => {
 
   if (existingDomain.ok) {
     console.log(`Pages domain "${CUSTOM_DOMAIN}" already exists`);
+  } else if (existingDomain.status !== 404) {
+    throw new Error(`Failed to check Pages domain: ${existingDomain.status} ${await existingDomain.text()}`);
+  } else {
+    console.log(`Setting Pages domain "${CUSTOM_DOMAIN}"...`);
+    const createDomain = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/${PROJECT_NAME}/domains`,
+      {
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: CUSTOM_DOMAIN }),
+      },
+    );
+
+    if (!createDomain.ok) {
+      throw new Error(`Failed to create Pages domain: ${createDomain.status} ${await createDomain.text()}`);
+    }
+
+    console.log("Pages domain set successfully");
+  }
+
+  const zonesResponse = await fetch(
+    `https://api.cloudflare.com/client/v4/zones?account.id=${CF_ACCOUNT_ID}&per_page=50`,
+    { headers },
+  );
+  if (!zonesResponse.ok) {
+    throw new Error(`Failed to list DNS zones: ${zonesResponse.status} ${await zonesResponse.text()}`);
+  }
+
+  const zones = await zonesResponse.json() as { result: Array<{ id: string; name: string }> };
+  const zone = zones.result
+    .filter(({ name }) => CUSTOM_DOMAIN === name || CUSTOM_DOMAIN.endsWith(`.${name}`))
+    .sort((a, b) => b.name.length - a.name.length)[0];
+  if (!zone) {
+    throw new Error(`No Cloudflare DNS zone found for "${CUSTOM_DOMAIN}"`);
+  }
+
+  const recordsResponse = await fetch(
+    `https://api.cloudflare.com/client/v4/zones/${zone.id}/dns_records?name=${CUSTOM_DOMAIN}`,
+    { headers },
+  );
+  if (!recordsResponse.ok) {
+    throw new Error(`Failed to check DNS records: ${recordsResponse.status} ${await recordsResponse.text()}`);
+  }
+
+  const records = await recordsResponse.json() as { result: Array<{ type: string; content: string }> };
+  const target = `${PROJECT_NAME}.pages.dev`;
+  if (records.result.some(record => record.type === "CNAME" && record.content === target)) {
+    console.log(`Pages DNS record for "${CUSTOM_DOMAIN}" already exists`);
     return;
   }
-
-  if (existingDomain.status !== 404) {
-    throw new Error(`Failed to check Pages domain: ${existingDomain.status} ${await existingDomain.text()}`);
+  if (records.result.length > 0) {
+    throw new Error(`Refusing to replace existing DNS records for "${CUSTOM_DOMAIN}"`);
   }
 
-  console.log(`Setting Pages domain "${CUSTOM_DOMAIN}"...`);
-  const createDomain = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/${PROJECT_NAME}/domains`,
+  const createRecord = await fetch(
+    `https://api.cloudflare.com/client/v4/zones/${zone.id}/dns_records`,
     {
       method: "POST",
       headers: {
         ...headers,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ name: CUSTOM_DOMAIN }),
+      body: JSON.stringify({
+        type: "CNAME",
+        name: CUSTOM_DOMAIN,
+        content: target,
+        proxied: true,
+        ttl: 1,
+      }),
     },
   );
-
-  if (!createDomain.ok) {
-    throw new Error(`Failed to create Pages domain: ${createDomain.status} ${await createDomain.text()}`);
+  if (!createRecord.ok) {
+    throw new Error(`Failed to create Pages DNS record: ${createRecord.status} ${await createRecord.text()}`);
   }
 
-  console.log("Pages domain set successfully");
+  console.log(`Pages DNS record created for "${CUSTOM_DOMAIN}"`);
 };
 
 export const getDatabase = async () => {
